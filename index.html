@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Select Dataset</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="centered">
+    <h1>Select a Dataset</h1>
+    <select id="fileSelect">
+      <option disabled selected>Loading datasets...</option>
+    </select>
+    <br><br>
+    <button id="viewBtn" disabled>View in Cesium</button>
+  </div>
+
+  <script>
+    const select = document.getElementById("fileSelect");
+    const button = document.getElementById("viewBtn");
+
+    fetch("files.json")
+      .then(res => res.json())
+      .then(files => {
+        select.innerHTML = "";
+        files.forEach(file => {
+          const option = document.createElement("option");
+          option.value = file;
+          option.textContent = file;
+          select.appendChild(option);
+        });
+        button.disabled = false;
+      });
+
+    button.addEventListener("click", () => {
+      const selected = select.value;
+      if (selected) {
+        window.location.href = `viewer.html?file=${encodeURIComponent(selected)}`;
+      }
+    });
+  </script>
+</body>
+</html>
