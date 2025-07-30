@@ -31,6 +31,7 @@ function parseCSV(text) {
 //   const lonIdx = headers.indexOf("longitude");
 //   const altIdx = headers.indexOf("altitude");
 
+const rssiIdx = 0;
     const latIdx = 9;
   const lonIdx = 10;
   const altIdx = 11;
@@ -40,18 +41,23 @@ function parseCSV(text) {
     return {
       lat: parseFloat(cols[latIdx]),
       lon: parseFloat(cols[lonIdx]),
-      alt: parseFloat(cols[altIdx])
+      alt: parseFloat(cols[altIdx]),
+      rssi: -1.0 * parseFloat(cols[rssiIdx])
     };
   });
 }
 
 function plotPoints(points) {
+
+  const rssiMin = 70;
+  const rssiMax = 115;
+
   for (const point of points) {
     viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(point.lon, point.lat, point.alt),
       point: {
         pixelSize: 8,
-        color: Cesium.Color.RED,
+        color: new Cesium.Color(1 - ((point.rssi - rssiMin) / (rssiMax - rssiMin)), 0, 0, 1),
       }
     });
   }
