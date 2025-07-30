@@ -1,4 +1,4 @@
-import { Viewer, createWorldTerrain, Cartesian3, Color } from "https://cesium.com/downloads/cesiumjs/releases/1.116/Build/Cesium/Cesium.js";
+import "https://cesium.com/downloads/cesiumjs/releases/1.130/Build/Cesium/Cesium.js";
 
 const urlParams = new URLSearchParams(window.location.search);
 const file = urlParams.get("file");
@@ -48,17 +48,17 @@ function parseCSV(text) {
 function plotPoints(points) {
   for (const point of points) {
     viewer.entities.add({
-      position: Cartesian3.fromDegrees(point.lon, point.lat, point.alt),
+      position: Cesium.Cartesian3.fromDegrees(point.lon, point.lat, point.alt),
       point: {
         pixelSize: 8,
-        color: Color.YELLOW,
+        color: Cesium.Color.RED,
       }
     });
   }
 
   if (points.length) {
     viewer.camera.flyTo({
-      destination: Cartesian3.fromDegrees(points[0].lon, points[0].lat, 500000),
+      destination: Cesium.Cartesian3.fromDegrees(points[0].lon, points[0].lat, 500000),
     });
   }
 }
