@@ -1,44 +1,147 @@
 import "https://cesium.com/downloads/cesiumjs/releases/1.130/Build/Cesium/Cesium.js";
 
-const urlParams = new URLSearchParams(window.location.search);
-const file = urlParams.get("file");
+const predefinedColors = [
+  Cesium.Color.RED,
+  Cesium.Color.BLUE,
+  Cesium.Color.YELLOW,
+  Cesium.Color.ORANGE,
+  Cesium.Color.CYAN,
+  Cesium.Color.MAGENTA,
+  Cesium.Color.PURPLE,
+  Cesium.Color.BROWN,
+  Cesium.Color.GREEN,
+  Cesium.Color.LIME
+];
 
-if (!file) {
+var fileEntities = {}; // fileName → array of entities
+
+const fileParam = new URLSearchParams(window.location.search).get("file");
+
+if (!fileParam) {
   alert("No dataset selected.");
   throw new Error("Missing file parameter.");
 }
 
+if (fileParam === "ALL") {
+  fetch("files.json")
+    .then(res => res.json())
+    .then(fileList => loadAllFiles(fileList));
+} else {
+  loadSingleFile(fileParam);
+}
+
+async function loadSingleFile(fileName) {
+  loadCSVData(`data/${fileName}`);
+}
+
+async function loadAllFiles(fileList) {
+
+  for (let i = 0; i < fileList.length; i++) {
+    const file = fileList[i];
+    // Use predefined color based on index (wrap around if too many files)
+    const color = predefinedColors[i % predefinedColors.length];
+    const response = await fetch(`data/${file}`);
+    const text = await response.text();
+
+    const points = file.includes("lora") ? parseLoraCSV(text) : parseCSV(text);
+    const entities = plotPoints(points, color);
+    fileEntities[file] = entities;
+    console.log("Stored entities for", file, fileEntities[file]);
+    updateLegend(file, color);
+  }
+}
+
+function updateLegend(fileName, color) {
+  const legend = document.getElementById("legend");
+
+  const item = document.createElement("div");
+  item.className = "item";
+
+  const colorBox = document.createElement("div");
+  colorBox.className = "color-box";
+  colorBox.style.backgroundColor = Cesium.Color.fromAlpha(color, 1.0).toCssColorString();
+
+  const label = document.createElement("span");
+  label.textContent = fileName;
+
+  item.appendChild(colorBox);
+  item.appendChild(label);
+  legend.appendChild(item);
+
+  let isVisible = true;
+
+  // Enable toggling of visibility
+  item.addEventListener("click", () => {
+    const entities = fileEntities[fileName];
+    if (!entities) {
+      console.warn("No entities found for", fileName);
+      return;
+    }
+
+    console.log(entities);
+
+    isVisible = !isVisible;
+
+    entities.forEach((e) => {if(e) (e.show = isVisible)});
+
+    if (isVisible) {
+      item.classList.remove("inactive");
+    } else {
+      item.classList.add("inactive");
+    }
+  });
+}
+
+// Make legend draggable
+(function makeLegendDraggable() {
+  const legend = document.getElementById("legend");
+  let offsetX = 0, offsetY = 0, isDragging = false;
+
+  legend.addEventListener("mousedown", (e) => {
+    isDragging = true;
+    offsetX = e.clientX - legend.offsetLeft;
+    offsetY = e.clientY - legend.offsetTop;
+    e.preventDefault();
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (!isDragging) return;
+    legend.style.left = `${e.clientX - offsetX}px`;
+    legend.style.top = `${e.clientY - offsetY}px`;
+  });
+
+  document.addEventListener("mouseup", () => {
+    isDragging = false;
+  });
+})();
+
 Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzMzdhMjIxMS02MDdmLTRhNTMtYmRmZC1jMGU4NmFiZjdiNGQiLCJpZCI6MjIwMzI5LCJpYXQiOjE3NDkzMDEyNjh9.v-fHsJR4ncvFK-ETUid10vofS9OnLAxm0uAC_yj4wmk';
 
 // Initialize the Cesium Viewer in the HTML element with the `cesiumContainer` ID.
-        const viewer = new Cesium.Viewer('cesiumContainer', {
-            terrain: Cesium.Terrain.fromWorldTerrain(),
-            timeline: false
-            //requestRenderMode: false
-        });
+const viewer = new Cesium.Viewer('cesiumContainer', {
+  terrain: Cesium.Terrain.fromWorldTerrain(),
+  timeline: false
+  //requestRenderMode: false
+});
 
 async function loadCSVData(url) {
   const response = await fetch(url);
   const text = await response.text();
 
-  if(url.includes("lora")){
-  const points = parseLoraCSV(text);
-  plotPoints(points);
+  if (url.includes("lora")) {
+    const points = parseLoraCSV(text);
+    plotPoints(points, Cesium.Color.RED);
   } else {
-const points = parseCSV(text);
-  plotPoints(points);
+    const points = parseCSV(text);
+    plotPoints(points, Cesium.Color.BLUE);
   }
 }
 
 function parseCSV(text) {
   const lines = text.trim().split("\n");
-//   const headers = lines[0].split(",");
-//   const latIdx = headers.indexOf("latitude");
-//   const lonIdx = headers.indexOf("longitude");
-//   const altIdx = headers.indexOf("altitude");
 
-const rssiIdx = 0;
-    const latIdx = 9;
+  const rssiIdx = 0;
+  const latIdx = 9;
   const lonIdx = 10;
   const altIdx = 11;
 
@@ -55,12 +158,8 @@ const rssiIdx = 0;
 
 function parseLoraCSV(text) {
   const lines = text.trim().split("\n");
-//   const headers = lines[0].split(",");
-//   const latIdx = headers.indexOf("latitude");
-//   const lonIdx = headers.indexOf("longitude");
-//   const altIdx = headers.indexOf("altitude");
 
-    const latIdx = 1;
+  const latIdx = 1;
   const lonIdx = 2;
   const altIdx = 3;
 
@@ -75,46 +174,30 @@ function parseLoraCSV(text) {
   });
 }
 
-async function plotPoints(points) {
+function plotPoints(points, color) {
 
-// Remove zero positions
-points = points.filter(p => p.lon != 0);
+  let entities = [];
 
-// const positions = points.map(p => ({
-//     longitude: p.lon,
-//     latitude: p.lat
-//   }));
-
-//   // Wait for the terrain provider to be ready
-//   await terrainProvider.readyPromise;
-
-//   // Sample terrain height at all positions
-//   // const updatedHeights = await Cesium.sampleTerrainMostDetailed(terrainProvider, positions);
-
-//   const updatedHeights = await Cesium.sampleTerrain(terrainProvider, 12, positions);
+  // Remove zero positions
+  points = points.filter(p => p.lon != 0);
 
   for (let i = 0; i < points.length; i++) {
-    // const terrainHeight = updatedHeights[i].height || 0;
     const point = points[i];
 
-    if(point.lon === 0){
-      continue;
-    }
+    const rssiMin = 70;
+    const rssiMax = 115;
+    const scale = 1 - ((point.rssi - rssiMin) / (rssiMax - rssiMin));
 
-    // Use CSV altitude if it's above terrain, else snap to terrain
-    // const altitude = point.alt >= terrainHeight ? point.alt : terrainHeight;
-
-  const rssiMin = 70;
-  const rssiMax = 115;
-
-    viewer.entities.add({
+    const entity = viewer.entities.add({
       position: Cesium.Cartesian3.fromDegrees(point.lon, point.lat, point.alt),
       point: {
         pixelSize: 8,
-        color: new Cesium.Color(1 - ((point.rssi - rssiMin) / (rssiMax - rssiMin)), 0, 0, 1),
+        color: new Cesium.Color(color.red * scale, color.green * scale, color.blue * scale, 1)
         // heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
       }
     });
+
+    entities.push(entity);
   }
 
   if (points.length) {
@@ -122,6 +205,6 @@ points = points.filter(p => p.lon != 0);
       destination: Cesium.Cartesian3.fromDegrees(points[0].lon, points[0].lat, 500000),
     });
   }
-}
 
-loadCSVData(`data/${file}`);
+  return entities;
+}
