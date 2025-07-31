@@ -13,9 +13,15 @@ const predefinedColors = [
   Cesium.Color.LIME
 ];
 
-var fileEntities = {}; // fileName → array of entities
+var fileEntities = {}; // fileName → point primitive collection
+
+const sdPointSize = 2;
+const pointSize = 8;
+const sdColor = Cesium.Color.LIGHTGREY;
 
 const fileParam = new URLSearchParams(window.location.search).get("file");
+
+console.log(toDecimalDegrees(5));
 
 if (!fileParam) {
   alert("No dataset selected.");
@@ -31,23 +37,70 @@ if (fileParam === "ALL") {
 }
 
 async function loadSingleFile(fileName) {
-  loadCSVData(`data/${fileName}`);
+
+  fileName = fileName.replace('.csv', '');
+  const sdFileName = `${fileName} SD`;
+
+  const url = `data/${fileName}.csv`;
+  const sdUrl = `data/${sdFileName}.csv`;
+
+  const response = await fetch(url);
+  const text = await response.text();
+
+  // If the user just wants to see ground truth data then show only that
+  if (url.includes("SD")) {
+    const points = parseSdCSV(text);
+    const entities = plotPoints(points, Cesium.Color.YELLOW, pointSize);
+    fileEntities[fileName] = entities;
+    updateLegend(fileName, Cesium.Color.YELLOW);
+    return;
+  }
+
+  if (url.includes("lora")) {
+    const points = parseLoraCSV(text);
+    const entities = plotPoints(points, Cesium.Color.RED, pointSize);
+    fileEntities[fileName] = entities;
+    updateLegend(fileName, Cesium.Color.RED);
+  } else {
+    const points = parseCSV(text);
+    const entities = plotPoints(points, Cesium.Color.BLUE, pointSize);
+    fileEntities[fileName] = entities;
+    updateLegend(fileName, Cesium.Color.BLUE);
+  }
+
+  // If we have it, include the ground truth
+  const sdResponse = await fetch(sdUrl);
+  if (sdResponse.ok) {
+    const sdText = await sdResponse.text();
+    const sdPoints = parseSdCSV(sdText);
+    const entities = plotPoints(sdPoints, sdColor, sdPointSize);
+    fileEntities[sdFileName] = entities;
+    updateLegend(sdFileName, sdColor);
+  }
 }
 
 async function loadAllFiles(fileList) {
 
   for (let i = 0; i < fileList.length; i++) {
     const file = fileList[i];
+    const trimFile = file.replace('.csv', '');
     // Use predefined color based on index (wrap around if too many files)
     const color = predefinedColors[i % predefinedColors.length];
     const response = await fetch(`data/${file}`);
     const text = await response.text();
 
-    const points = file.includes("lora") ? parseLoraCSV(text) : parseCSV(text);
-    const entities = plotPoints(points, color);
-    fileEntities[file] = entities;
-    console.log("Stored entities for", file, fileEntities[file]);
-    updateLegend(file, color);
+    // Special plot for ground truth
+    if (file.includes("SD")) {
+      const points = parseSdCSV(text);
+      const entities = plotPoints(points, sdColor, sdPointSize);
+      fileEntities[trimFile] = entities;
+      updateLegend(trimFile, sdColor);
+    } else {
+      const points = file.includes("lora") ? parseLoraCSV(text) : parseCSV(text);
+      const entities = plotPoints(points, color, pointSize);
+      fileEntities[trimFile] = entities;
+      updateLegend(trimFile, color);
+    }
   }
 }
 
@@ -68,29 +121,30 @@ function updateLegend(fileName, color) {
   item.appendChild(label);
   legend.appendChild(item);
 
-  let isVisible = true;
-
   // Enable toggling of visibility
   item.addEventListener("click", () => {
-    const entities = fileEntities[fileName];
-    if (!entities) {
-      console.warn("No entities found for", fileName);
+    const pointCollection = fileEntities[fileName];
+    if (!pointCollection) {
+      console.warn("No point collection found for", fileName);
       return;
     }
 
-    console.log(entities);
+    pointCollection.show = !pointCollection.show;
 
-    isVisible = !isVisible;
-
-    entities.forEach((e) => {if(e) (e.show = isVisible)});
-
-    if (isVisible) {
+    if (pointCollection.show) {
       item.classList.remove("inactive");
     } else {
       item.classList.add("inactive");
     }
   });
 }
+
+// Try to prevent memory leaks
+window.addEventListener('beforeunload', function () {
+  if (viewer && viewer.destroy) {
+    viewer.destroy(); // releases WebGL context and DOM elements
+  }
+});
 
 // Make legend draggable
 (function makeLegendDraggable() {
@@ -124,19 +178,6 @@ const viewer = new Cesium.Viewer('cesiumContainer', {
   //requestRenderMode: false
 });
 
-async function loadCSVData(url) {
-  const response = await fetch(url);
-  const text = await response.text();
-
-  if (url.includes("lora")) {
-    const points = parseLoraCSV(text);
-    plotPoints(points, Cesium.Color.RED);
-  } else {
-    const points = parseCSV(text);
-    plotPoints(points, Cesium.Color.BLUE);
-  }
-}
-
 function parseCSV(text) {
   const lines = text.trim().split("\n");
 
@@ -169,17 +210,45 @@ function parseLoraCSV(text) {
       lat: parseFloat(cols[latIdx]),
       lon: parseFloat(cols[lonIdx]),
       alt: parseFloat(cols[altIdx]),
-      rssi: 70 // We don't really have this data right now? It could be in the lora json data somewhere to be fair..
+      rssi: 70
     };
   });
 }
 
-function plotPoints(points, color) {
+function parseSdCSV(text) {
+  const lines = text.trim().split("\n");
 
-  let entities = [];
+  const latIdx = 2;
+  const lonIdx = 3;
+  const altIdx = 4;
+
+  return lines.map(line => {
+    const cols = line.split(",");
+    return {
+      lat: toDecimalDegrees(parseFloat(cols[latIdx])),
+      lon: toDecimalDegrees(parseFloat(cols[lonIdx])),
+      alt: parseFloat(cols[altIdx]),
+      rssi: 70
+    };
+  });
+}
+
+function toDecimalDegrees(value) {
+  // Converting from DDMM.MMMM format to decimal degrees
+  // First part gets the DD value by dividing by 100 and then truncating
+  // Second part gets the remainder and divides by 60 for conversion
+  return ((value / 100.0) | 0) + (value % 100.0 / 60.0);
+}
+
+function plotPoints(points, color, size) {
+
+  // let entities = [];
 
   // Remove zero positions
-  points = points.filter(p => p.lon != 0);
+  points = points.filter(p => (p.lon != 0));
+  points = points.filter(p => (p.lon != toDecimalDegrees(-1.0)));
+
+  var pointCollection = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection());
 
   for (let i = 0; i < points.length; i++) {
     const point = points[i];
@@ -188,16 +257,12 @@ function plotPoints(points, color) {
     const rssiMax = 115;
     const scale = 1 - ((point.rssi - rssiMin) / (rssiMax - rssiMin));
 
-    const entity = viewer.entities.add({
+    pointCollection.add({
       position: Cesium.Cartesian3.fromDegrees(point.lon, point.lat, point.alt),
-      point: {
-        pixelSize: 8,
-        color: new Cesium.Color(color.red * scale, color.green * scale, color.blue * scale, 1)
-        // heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-      }
+      pixelSize: size,
+      color: new Cesium.Color(color.red * scale, color.green * scale, color.blue * scale, 1)
+      // heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
     });
-
-    entities.push(entity);
   }
 
   if (points.length) {
@@ -206,5 +271,5 @@ function plotPoints(points, color) {
     });
   }
 
-  return entities;
+  return pointCollection;
 }
