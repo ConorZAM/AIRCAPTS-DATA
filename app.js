@@ -4,8 +4,8 @@ const predefinedColors = [
   Cesium.Color.RED,
   Cesium.Color.BLUE,
   Cesium.Color.YELLOW,
-  Cesium.Color.CYAN,
   Cesium.Color.MAGENTA,
+  Cesium.Color.CYAN,
   Cesium.Color.ORANGE,
   Cesium.Color.PURPLE,
   Cesium.Color.BROWN,
@@ -21,7 +21,7 @@ const sdColor = Cesium.Color.LIGHTGREY;
 
 const fileParam = new URLSearchParams(window.location.search).get("file");
 
-console.log(toDecimalDegrees(5));
+// console.log(toDecimalDegrees(5));
 
 if (!fileParam) {
   alert("No dataset selected.");
@@ -81,14 +81,15 @@ async function loadSingleFile(fileName) {
 
 async function loadAllFiles(fileList) {
 
+  var colourIndex = 0;
+
   for (let i = 0; i < fileList.length; i++) {
     const file = fileList[i];
     const trimFile = file.replace('.csv', '');
     // Use predefined color based on index (wrap around if too many files)
-    const color = predefinedColors[i % predefinedColors.length];
     const response = await fetch(`data/${file}`);
     const text = await response.text();
-
+    
     // Special plot for ground truth
     if (file.includes("SD")) {
       const points = parseSdCSV(text);
@@ -96,6 +97,8 @@ async function loadAllFiles(fileList) {
       fileEntities[trimFile] = entities;
       updateLegend(trimFile, sdColor);
     } else {
+      const color = predefinedColors[colourIndex % predefinedColors.length];
+      colourIndex++;
       const points = file.includes("lora") ? parseLoraCSV(text) : parseCSV(text);
       const entities = plotPoints(points, color, pointSize);
       fileEntities[trimFile] = entities;
