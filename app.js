@@ -13,6 +13,29 @@ const predefinedColors = [
   Cesium.Color.LIME
 ];
 
+Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzMzdhMjIxMS02MDdmLTRhNTMtYmRmZC1jMGU4NmFiZjdiNGQiLCJpZCI6MjIwMzI5LCJpYXQiOjE3NDkzMDEyNjh9.v-fHsJR4ncvFK-ETUid10vofS9OnLAxm0uAC_yj4wmk';
+
+// const terrain = Cesium.Terrain.fromWorldTerrain();
+
+// Initialize the Cesium Viewer in the HTML element with the `cesiumContainer` ID.
+
+
+const terrainProvider = await Cesium.createWorldTerrainAsync();
+// viewer.terrainProvider = terrainProvider;
+
+var viewer = new Cesium.Viewer('cesiumContainer', {
+  // terrain: terrain,
+  timeline: false,
+  terrainProvider: terrainProvider
+  // terrainProvider: await Cesium.CesiumTerrainProvider.fromUrl('https://assets.agi.com/stk-terrain/tilesets/world/tiles/1/0/0.terrain')
+  //requestRenderMode: false
+});
+
+// Wait until terrain is ready
+// terrain.readyPromise.then(() => {
+//   console.log("Terrain is ready, safe to sample terrain now");
+// });
+
 var fileEntities = {}; // fileName → point primitive collection
 
 const sdPointSize = 2;
@@ -50,7 +73,7 @@ async function loadSingleFile(fileName) {
   // If the user just wants to see ground truth data then show only that
   if (url.includes("SD")) {
     const points = parseSdCSV(text);
-    const entities = plotPoints(points, Cesium.Color.YELLOW, pointSize);
+    const entities = await plotPoints(points, Cesium.Color.YELLOW, pointSize);
     fileEntities[fileName] = entities;
     updateLegend(fileName, Cesium.Color.YELLOW);
     return;
@@ -58,12 +81,12 @@ async function loadSingleFile(fileName) {
 
   if (url.includes("lora")) {
     const points = parseLoraCSV(text);
-    const entities = plotPoints(points, Cesium.Color.RED, pointSize);
+    const entities = await plotPoints(points, Cesium.Color.RED, pointSize);
     fileEntities[fileName] = entities;
     updateLegend(fileName, Cesium.Color.RED);
   } else {
     const points = parseCSV(text);
-    const entities = plotPoints(points, Cesium.Color.BLUE, pointSize);
+    const entities = await plotPoints(points, Cesium.Color.BLUE, pointSize);
     fileEntities[fileName] = entities;
     updateLegend(fileName, Cesium.Color.BLUE);
   }
@@ -73,7 +96,7 @@ async function loadSingleFile(fileName) {
   if (sdResponse.ok) {
     const sdText = await sdResponse.text();
     const sdPoints = parseSdCSV(sdText);
-    const entities = plotPoints(sdPoints, sdColor, sdPointSize);
+    const entities = await plotPoints(sdPoints, sdColor, sdPointSize);
     fileEntities[sdFileName] = entities;
     updateLegend(sdFileName, sdColor);
   }
@@ -89,18 +112,18 @@ async function loadAllFiles(fileList) {
     // Use predefined color based on index (wrap around if too many files)
     const response = await fetch(`data/${file}`);
     const text = await response.text();
-    
+
     // Special plot for ground truth
     if (file.includes("SD")) {
       const points = parseSdCSV(text);
-      const entities = plotPoints(points, sdColor, sdPointSize);
+      const entities = await plotPoints(points, sdColor, sdPointSize);
       fileEntities[trimFile] = entities;
       updateLegend(trimFile, sdColor);
     } else {
       const color = predefinedColors[colourIndex % predefinedColors.length];
       colourIndex++;
       const points = file.includes("lora") ? parseLoraCSV(text) : parseCSV(text);
-      const entities = plotPoints(points, color, pointSize);
+      const entities = await plotPoints(points, color, pointSize);
       fileEntities[trimFile] = entities;
       updateLegend(trimFile, color);
     }
@@ -172,32 +195,48 @@ window.addEventListener('beforeunload', function () {
   });
 })();
 
-Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzMzdhMjIxMS02MDdmLTRhNTMtYmRmZC1jMGU4NmFiZjdiNGQiLCJpZCI6MjIwMzI5LCJpYXQiOjE3NDkzMDEyNjh9.v-fHsJR4ncvFK-ETUid10vofS9OnLAxm0uAC_yj4wmk';
 
-// Initialize the Cesium Viewer in the HTML element with the `cesiumContainer` ID.
-const viewer = new Cesium.Viewer('cesiumContainer', {
-  terrain: Cesium.Terrain.fromWorldTerrain(),
-  timeline: false
-  //requestRenderMode: false
-});
+
+// viewer.terrainProvider = new Cesium.CesiumTerrainProvider({
+//         url: Cesium.IonResource.fromAssetId(1679342),
+//         requestVertexNormals: true
+// });
 
 function parseCSV(text) {
   const lines = text.trim().split("\n");
 
-  const rssiIdx = 0;
-  const latIdx = 9;
-  const lonIdx = 10;
-  const altIdx = 11;
+  // I'm being lazy now, this is to get the 4G data rather than having checks in the file names everywhere
+  if (lines[0].split(",").length == 5) {
+    const latIdx = 1;
+    const lonIdx = 2;
+    const altIdx = 3;
 
-  return lines.map(line => {
-    const cols = line.split(",");
-    return {
-      lat: parseFloat(cols[latIdx]),
-      lon: parseFloat(cols[lonIdx]),
-      alt: parseFloat(cols[altIdx]),
-      rssi: -1.0 * parseFloat(cols[rssiIdx])
-    };
-  });
+    return lines.map(line => {
+      const cols = line.split(",");
+      return {
+        lat: parseFloat(cols[latIdx]),
+        lon: parseFloat(cols[lonIdx]),
+        alt: parseFloat(cols[altIdx]),
+        rssi: 70
+      };
+    });
+  } else {
+
+    const rssiIdx = 0;
+    const latIdx = 9;
+    const lonIdx = 10;
+    const altIdx = 11;
+
+    return lines.map(line => {
+      const cols = line.split(",");
+      return {
+        lat: parseFloat(cols[latIdx]),
+        lon: parseFloat(cols[lonIdx]),
+        alt: parseFloat(cols[altIdx]),
+        rssi: -1.0 * parseFloat(cols[rssiIdx])
+      };
+    });
+  }
 }
 
 function parseLoraCSV(text) {
@@ -243,7 +282,7 @@ function toDecimalDegrees(value) {
   return ((value / 100.0) | 0) + (value % 100.0 / 60.0);
 }
 
-function plotPoints(points, color, size) {
+async function plotPoints(points, color, size) {
 
   // let entities = [];
 
@@ -251,26 +290,51 @@ function plotPoints(points, color, size) {
   points = points.filter(p => (p.lon != 0));
   points = points.filter(p => (p.lon != toDecimalDegrees(-1.0)));
 
-  var pointCollection = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection());
-
-  for (let i = 0; i < points.length; i++) {
-    const point = points[i];
-
-    const rssiMin = 70;
-    const rssiMax = 115;
-    const scale = 1 - ((point.rssi - rssiMin) / (rssiMax - rssiMin));
-
-    pointCollection.add({
-      position: Cesium.Cartesian3.fromDegrees(point.lon, point.lat, point.alt),
-      pixelSize: size,
-      color: new Cesium.Color(color.red * scale, color.green * scale, color.blue * scale, 1)
-      // heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-    });
-  }
-
   if (points.length) {
     viewer.camera.flyTo({
       destination: Cesium.Cartesian3.fromDegrees(points[0].lon, points[0].lat, 500000),
+    });
+  }
+
+  var pointCollection = viewer.scene.primitives.add(new Cesium.PointPrimitiveCollection());
+
+
+  // Convert to Cartographic (ignoring original height for sampling terrain)
+  const cartographics = points.map(p => Cesium.Cartographic.fromDegrees(p.lon, p.lat));
+
+  const batchSize = 500;
+
+
+  for (let start = 0; start < cartographics.length; start += batchSize) {
+    const batch = cartographics.slice(start, start + batchSize);
+    const pointsBatch = points.slice(start, start + batchSize); // corresponding points
+
+    if (batch.length === 0) continue; // skip empty batches
+
+    const adjusted = await Cesium.sampleTerrainMostDetailed(terrainProvider, batch);
+
+
+    // Sanity check
+    if (!adjusted || adjusted.length !== batch.length) {
+      console.error("Adjusted batch invalid:", adjusted);
+      continue;
+    }
+
+    adjusted.forEach((sample, index) => {
+      const p = pointsBatch[index]; // correct point for this batch
+      if (!p || !sample) return; // skip invalid entries
+
+      const rssiMin = 70;
+      const rssiMax = 115;
+      const scale = 1 - ((p.rssi - rssiMin) / (rssiMax - rssiMin));
+
+
+      pointCollection.add({
+        position: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, Math.max(p.alt, sample.height + 1.0)),
+        // position: Cesium.Cartesian3.fromDegrees(p.lon, p.lat, sample.height + 1.0),
+        pixelSize: size,
+        color: new Cesium.Color(color.red * scale, color.green * scale, color.blue * scale, 1)
+      });
     });
   }
 
